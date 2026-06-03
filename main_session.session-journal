@@ -1,0 +1,69 @@
+import asyncio
+import random
+from telethon.errors import FloodWaitError
+from core.config import config_data, roast_abuse
+from core.clients import get_active_clients
+
+active_ra_raids = {}
+active_custom_raids = {}
+active_reply_raids = {}
+
+async def safe_send(client, chat_id, text, reply_to=None):
+    """Sends a message, handling FloodWait gracefully to avoid bans."""
+    try:
+        if reply_to:
+            await client.send_message(chat_id, text, reply_to=reply_to, parse_mode='html')
+        else:
+            await client.send_message(chat_id, text, parse_mode='html')
+    except FloodWaitError as e:
+        session_name = getattr(client.session, 'filename', 'unknown session')
+        print(f"⚠️ [FloodWait] Rate limited! Sleeping for {e.seconds} seconds on {session_name}...")
+        await asyncio.sleep(e.seconds + 1)
+    except Exception as e:
+        pass
+
+async def _raid_loop(client, chat_id, raid_dict, text_func, reply_to=None):
+    """
+    Generic high-speed raid loop for a specific client.
+    text_func is a function that generates the next message.
+    """
+    while raid_dict.get(chat_id, False):
+        await safe_send(client, chat_id, text_func(), reply_to=reply_to)
+        
+        # Zero-Yield Fast Mechanics
+        delay = config_data.get("DELAY", 1.0)
+        await asyncio.sleep(delay)
+
+def start_ra_raid(chat_id, mention, reply_to=None):
+    active_ra_raids[chat_id] = True
+    def get_text():
+        return f"{mention} {random.choice(roast_abuse)}"
+        
+    for c in get_active_clients():
+        asyncio.create_task(_raid_loop(c, chat_id, active_ra_raids, get_text, reply_to=reply_to))
+
+def start_custom_raid(chat_id, text):
+    active_custom_raids[chat_id] = True
+    def get_text():
+        return text
+        
+    for c in get_active_clients():
+        asyncio.create_task(_raid_loop(c, chat_id, active_custom_raids, get_text))
+
+def start_reply_raid(chat_id, user_id, count, event_id, first_name):
+    if chat_id not in active_reply_raids:
+        active_reply_raids[chat_id] = {}
+    active_reply_raids[chat_id][user_id] = count
+    
+    mention = f'<a href="tg://user?id={user_id}">{first_name}</a>'
+    
+    async def run_reply_raid(client):
+        for _ in range(count):
+            if chat_id not in active_reply_raids or user_id not in active_reply_raids.get(chat_id, {}):
+                break
+            text = f"{mention} {random.choice(roast_abuse)}"
+            await safe_send(client, chat_id, text, reply_to=event_id)
+            await asyncio.sleep(config_data.get("DELAY", 1.0))
+            
+    for c in get_active_clients():
+        asyncio.create_task(run_reply_raid(c))

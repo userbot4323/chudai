@@ -1,0 +1,39 @@
+import asyncio
+import sys
+from telethon.sessions import StringSession
+from telethon import TelegramClient
+
+import core.config as config
+from core.clients import main_app, army_clients
+import core.clients as clients_module
+
+# Import plugins to register the handlers automatically
+import plugins.admin_cmds
+import plugins.raid_cmds
+import plugins.utils_cmds
+
+async def main():
+    print("🚀 Starting Main Session...")
+    await main_app.start()
+    me = await main_app.get_me()
+    clients_module.OWNER_ID = me.id
+    print(f"✅ Main Session Started Successfully. Owner ID: {clients_module.OWNER_ID}")
+    
+    for idx, sess in enumerate(config.config_data["SESSIONS"]):
+        try:
+            c = TelegramClient(StringSession(sess), config.API_ID, config.API_HASH)
+            await c.start()
+            army_clients.append(c)
+            print(f"🟢 Army Session {idx+1} Started.")
+        except Exception as e:
+            print(f"🔴 Failed to start Army Session {idx+1}: {e}")
+            
+    print("🔥 Userbot is up and running. Awaiting commands... 🔥")
+    await main_app.run_until_disconnected()
+
+if __name__ == "__main__":
+    try:
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        print("Shutting down...")
